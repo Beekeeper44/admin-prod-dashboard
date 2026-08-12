@@ -1,6 +1,12 @@
 {
-  "cleanUrls": true,
-  "headers": [
-    { "source": "/api/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
+  "version": 2,
+  "builds": [
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "api/board.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/board", "dest": "/api/board.js", "headers": { "Cache-Control": "no-store" } },
+    { "src": "/", "dest": "/index.html" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

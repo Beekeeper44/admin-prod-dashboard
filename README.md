@@ -37,6 +37,10 @@ One link the team follows. Edits save themselves; no redeploy to update content.
 
 ## If you get 404: NOT_FOUND
 
+`vercel.json` pins the routing explicitly (`builds` + `routes`), so Vercel does not have to
+infer anything: `/` serves `index.html` and `/api/board` runs the function. If a 404 survives
+a redeploy with this file in place, the deployment root is wrong — see below.
+
 With no build step, Vercel serves a `public/` directory as the site root if one exists —
 which hides `index.html` at the project root. This project must not contain a `public/`
 folder. The logo is embedded in `index.html` as a data URI, so there is nothing to host.
