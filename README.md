@@ -35,6 +35,15 @@ One link the team follows. Edits save themselves; no redeploy to update content.
   clears Completed, and files the old week into **History**.
 - **Copy for Slack** outputs overview, summary, sections and ship calendar.
 
+## If you get 404: NOT_FOUND
+
+With no build step, Vercel serves a `public/` directory as the site root if one exists —
+which hides `index.html` at the project root. This project must not contain a `public/`
+folder. The logo is embedded in `index.html` as a data URI, so there is nothing to host.
+
+Deploy from the folder that directly contains `index.html`, `api/` and `package.json`.
+Check the deployment's **Source** tab: you should see `index.html` at the top level.
+
 ## Data
 Single row in `admin_board`; `data` holds the board JSON:
 
