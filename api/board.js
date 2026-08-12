@@ -208,10 +208,22 @@ const SEED = {
       "day": "—",
       "note": "Long project · discovery across every phase · gated on the item cutover completing"
     }
+  ],
+  "milestones": [
+    {
+      "id": "m1",
+      "date": "2026-08-15",
+      "label": "Cards → Items Phase 2 gate",
+      "type": "gate"
+    }
   ]
 };
 
+
+let tableReady = false;
+
 async function ensureTable() {
+  if (tableReady) return;
   await sql`
     CREATE TABLE IF NOT EXISTS admin_board (
       id          text PRIMARY KEY,
@@ -220,25 +232,33 @@ async function ensureTable() {
       updated_by  text,
       updated_at  timestamptz NOT NULL DEFAULT now()
     )`;
+  tableReady = true;
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
-
   try {
-    await ensureTable();
-
     if (req.method === 'GET') {
-      const rows = await sql`SELECT data, revision, updated_by, updated_at
-                             FROM admin_board WHERE id = ${BOARD_ID}`;
+      res.setHeader('Cache-Control', 'no-store');
+      let rows;
+      try {
+        rows = await sql`SELECT data, revision, updated_by, updated_at
+                         FROM admin_board WHERE id = ${BOARD_ID}`;
+      } catch (e) {
+        await ensureTable();                       // table missing on first ever call
+        rows = await sql`SELECT data, revision, updated_by, updated_at
+                         FROM admin_board WHERE id = ${BOARD_ID}`;
+      }
       if (!rows.length) {
+        await ensureTable();
         await sql`INSERT INTO admin_board (id, data) VALUES (${BOARD_ID}, ${JSON.stringify(SEED)})`;
         return res.status(200).json({ data: SEED, revision: 1, updated_by: null, updated_at: new Date().toISOString() });
       }
       return res.status(200).json(rows[0]);
     }
 
-    if (req.method === 'PUT') {
+    if (req.method === 'PUT' || req.method === 'POST') {
+      res.setHeader('Cache-Control', 'no-store');
+      await ensureTable();
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const { pin, data, editor, baseRevision } = body || {};
 
@@ -249,13 +269,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Board data is missing or malformed.' });
       }
 
-      // Last write wins, but tell the client if someone else got there first.
-      const current = await sql`SELECT revision FROM admin_board WHERE id = ${BOARD_ID}`;
-      const live = current.length ? current[0].revision : 0;
-      if (baseRevision != null && live > baseRevision) {
-        return res.status(409).json({ error: 'Someone else saved while you were editing.', revision: live });
-      }
-
+      // Single roundtrip: the WHERE clause is the concurrency check.
+      const base = baseRevision == null ? null : Number(baseRevision);
       const rows = await sql`
         INSERT INTO admin_board (id, data, revision, updated_by, updated_at)
         VALUES (${BOARD_ID}, ${JSON.stringify(data)}, 1, ${editor || null}, now())
@@ -264,11 +279,18 @@ export default async function handler(req, res) {
               revision = admin_board.revision + 1,
               updated_by = EXCLUDED.updated_by,
               updated_at = now()
+          WHERE ${base}::int IS NULL OR admin_board.revision <= ${base}::int
         RETURNING revision, updated_by, updated_at`;
+
+      if (!rows.length) {
+        const live = await sql`SELECT revision FROM admin_board WHERE id = ${BOARD_ID}`;
+        return res.status(409).json({ error: 'Someone else saved while you were editing.',
+                                      revision: live.length ? live[0].revision : null });
+      }
       return res.status(200).json(rows[0]);
     }
 
-    res.setHeader('Allow', 'GET, PUT');
+    res.setHeader('Allow', 'GET, PUT, POST');
     return res.status(405).json({ error: 'Method not allowed.' });
   } catch (err) {
     console.error(err);
